@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tabu Search Visualization</title>
+  <!-- Load React -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <!-- Load Babel for JSX -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
+  <!-- Load Lodash -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    .flex {
+      display: flex;
+    }
+    .flex-col {
+      flex-direction: column;
+    }
+    .flex-row {
+      flex-direction: row;
+    }
+    .items-center {
+      align-items: center;
+    }
+    .p-4 {
+      padding: 16px;
+    }
+    .w-full {
+      width: 100%;
+    }
+    .text-2xl {
+      font-size: 1.5rem;
+    }
+    .font-bold {
+      font-weight: bold;
+    }
+    .mb-4 {
+      margin-bottom: 16px;
+    }
+    .gap-4 {
+      gap: 16px;
+    }
+    .border {
+      border: 1px solid #ccc;
+    }
+    .rounded {
+      border-radius: 4px;
+    }
+    .mt-2 {
+      margin-top: 8px;
+    }
+    .text-sm {
+      font-size: 0.875rem;
+    }
+    .inline-block {
+      display: inline-block;
+    }
+    .w-4 {
+      width: 16px;
+    }
+    .h-4 {
+      height: 16px;
+    }
+    .bg-blue-500 {
+      background-color: blue;
+    }
+    .bg-green-500 {
+      background-color: green;
+    }
+    .bg-red-500 {
+      background-color: red;
+    }
+    .bg-gray-300 {
+      background-color: #ccc;
+    }
+    .bg-gray-500 {
+      background-color: #666;
+    }
+    .mr-2 {
+      margin-right: 8px;
+    }
+    .border-2 {
+      border-width: 2px;
+    }
+    .border-blue-400 {
+      border-color: rgba(0, 120, 255, 0.6);
+    }
+    .border-dashed {
+      border-style: dashed;
+    }
+    .rounded-full {
+      border-radius: 9999px;
+    }
+    .block {
+      display: block;
+    }
+    .mb-2 {
+      margin-bottom: 8px;
+    }
+    .text-right {
+      text-align: right;
+    }
+    .px-4 {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .py-2 {
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
+    .text-white {
+      color: white;
+    }
+    .italic {
+      font-style: italic;
+    }
+    
+    @media (max-width: 768px) {
+      .md\:flex-row {
+        flex-direction: column;
+      }
+    }
+    
+    /* Custom styles */
+    canvas {
+      background-color: white;
+    }
+    select, input[type="range"] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+    }
+    #root {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    
+    const TabuSearchVisualization = () => {
+      // Canvas dimensions
+      const width = 600;
+      const height = 500;
+      const margin = 50;
+      const plotWidth = width - 2 * margin;
+      const plotHeight = height - 2 * margin;
+      
+      // Function settings
+      const [functionType, setFunctionType] = useState('rastrigin');
+      const domain = [-5, 5]; // x and y limits
+      
+      // Tabu search settings
+      const [isRunning, setIsRunning] = useState(false);
+      const [speed, setSpeed] = useState(500); // ms per iteration
+      const [maxIterations, setMaxIterations] = useState(50);
+      const [currentIteration, setCurrentIteration] = useState(0);
+      const [neighborhoodSize, setNeighborhoodSize] = useState(20);
+      const [neighborhoodRadius, setNeighborhoodRadius] = useState(0.5);
+      const [tabuTenure, setTabuTenure] = useState(10);
+      const [randomWalk, setRandomWalk] = useState(false);
+      
+      // Search state
+      const [currentSolution, setCurrentSolution] = useState(null);
+      const [bestSolution, setBestSolution] = useState(null);
+      const [tabuList, setTabuList] = useState([]);
+      const [allVisited, setAllVisited] = useState([]);
+      const [convexHull, setConvexHull] = useState([]);
+      
+      const animationRef = useRef(null);
+      const canvasRef = useRef(null);
+      
+      // Multimodal functions
+      const functions = {
+        rastrigin: (x, y) => {
+          const A = 10;
+          return A * 2 + (x*x - A * Math.cos(2 * Math.PI * x)) + (y*y - A * Math.cos(2 * Math.PI * y));
+        },
+        ackley: (x, y) => {
+          const a = 20, b = 0.2, c = 2 * Math.PI;
+          const term1 = -a * Math.exp(-b * Math.sqrt(0.5 * (x*x + y*y)));
+          const term2 = -Math.exp(0.5 * (Math.cos(c*x) + Math.cos(c*y)));
+          return term1 + term2 + a + Math.E;
+        },
+        rosenbrock: (x, y) => {
+          return 100 * Math.pow(y - x*x, 2) + Math.pow(1 - x, 2);
+        },
+        himmelblau: (x, y) => {
+          return Math.pow(x*x + y - 11, 2) + Math.pow(x + y*y - 7, 2);
+        }
+      };
+      
+      // Initialize the search
+      useEffect(() => {
+        resetSearch();
+      }, [functionType]);
+      
+      const resetSearch = () => {
+        const x0 = Math.random() * (domain[1] - domain[0]) + domain[0];
+        const y0 = Math.random() * (domain[1] - domain[0]) + domain[0];
+        const initialSolution = { x: x0, y: y0, value: functions[functionType](x0, y0) };
+        
+        setCurrentIteration(0);
+        setCurrentSolution(initialSolution);
+        setBestSolution(initialSolution);
+        setTabuList([]);
+        setAllVisited([initialSolution]);
+        setConvexHull([]);
+        setIsRunning(false);
+        
+        if (animationRef.current) {
+          clearTimeout(animationRef.current);
+        }
+        
+        drawCanvas(initialSolution, initialSolution, [], [], []);
+      };
+      
+      // Compute the convex hull using Graham scan algorithm
+      const computeConvexHull = (points) => {
+        if (points.length < 3) return points;
+        
+        // Find the point with the lowest y-coordinate
+        const startPoint = _.minBy(points, 'y');
+        
+        // Sort points by polar angle with respect to the start point
+        const sortedPoints = _.sortBy(points, point => {
+          if (point === startPoint) return -Infinity;
+          return Math.atan2(point.y - startPoint.y, point.x - startPoint.x);
+        });
+        
+        // Build the convex hull
+        const hull = [sortedPoints[0], sortedPoints[1]];
+        
+        for (let i = 2; i < sortedPoints.length; i++) {
+          while (hull.length > 1 && !isLeftTurn(hull[hull.length - 2], hull[hull.length - 1], sortedPoints[i])) {
+            hull.pop();
+          }
+          hull.push(sortedPoints[i]);
+        }
+        
+        return hull;
+      };
+      
+      // Check if three points make a left turn
+      const isLeftTurn = (p1, p2, p3) => {
+        return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x) > 0;
+      };
+      
+      // Check if a point is inside a convex hull using the winding number algorithm
+      const isInsideConvexHull = (point, hull) => {
+        if (hull.length < 3) return false;
+        
+        // Add small epsilon to avoid precision issues
+        const EPSILON = 1e-10;
+        
+        // Use point-in-polygon winding number algorithm
+        let wn = 0; // winding number
+        
+        for (let i = 0; i < hull.length; i++) {
+          const p1 = hull[i];
+          const p2 = hull[(i + 1) % hull.length];
+          
+          // Check if point is exactly on the vertex or edge (within epsilon)
+          const d1 = Math.sqrt(Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2));
+          const d2 = Math.sqrt(Math.pow(point.x - p2.x, 2) + Math.pow(point.y - p2.y, 2));
+          const edgeLength = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+          
+          // If point is very close to a vertex, consider it inside
+          if (d1 < EPSILON || d2 < EPSILON) {
+            return true;
+          }
+          
+          // Check if point is on the edge (within epsilon)
+          if (d1 + d2 - edgeLength < EPSILON) {
+            return true;
+          }
+          
+          // Calculate winding number contribution
+          if (p1.y <= point.y) {
+            if (p2.y > point.y) { // upward crossing
+              if (((p2.x - p1.x) * (point.y - p1.y) - (point.x - p1.x) * (p2.y - p1.y)) > 0) {
+                wn++;
+              }
+            }
+          } else {
+            if (p2.y <= point.y) { // downward crossing
+              if (((p2.x - p1.x) * (point.y - p1.y) - (point.x - p1.x) * (p2.y - p1.y)) < 0) {
+                wn--;
+              }
+            }
+          }
+        }
+        
+        // Add a safety margin to consider points very close to the hull as inside
+        if (wn === 0) {
+          // Check distance to each edge, if it's very close, consider it inside
+          for (let i = 0; i < hull.length; i++) {
+            const p1 = hull[i];
+            const p2 = hull[(i + 1) % hull.length];
+            
+            // Calculate distance from point to line segment
+            const edgeLength = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+            if (edgeLength < EPSILON) continue; // Skip degenerate edges
+            
+            // Distance from point to line formula
+            const distance = Math.abs((p2.y - p1.y) * point.x - (p2.x - p1.x) * point.y + p2.x * p1.y - p2.y * p1.x) / edgeLength;
+            
+            // If point is very close to any edge, consider it inside
+            if (distance < 0.1) {
+              return true;
+            }
+          }
+        }
+        
+        return wn !== 0;
+      };
+      
+      // Generate neighborhood solutions
+      const generateNeighbors = (solution) => {
+        const neighbors = [];
+        
+        for (let i = 0; i < neighborhoodSize; i++) {
+          // Random direction in polar coordinates
+          const theta = Math.random() * 2 * Math.PI;
+          // Random distance (could use different distributions)
+          const r = Math.random() * neighborhoodRadius;
+          
+          const newX = Math.max(domain[0], Math.min(domain[1], solution.x + r * Math.cos(theta)));
+          const newY = Math.max(domain[0], Math.min(domain[1], solution.y + r * Math.sin(theta)));
+          
+          neighbors.push({
+            x: newX,
+            y: newY,
+            value: functions[functionType](newX, newY)
+          });
+        }
+        
+        return neighbors;
+      };
+      
+      // Perform one iteration of tabu search
+      const tabuSearchIteration = () => {
+        if (currentIteration >= maxIterations) {
+          setIsRunning(false);
+          return;
+        }
+        
+        // Generate neighbors
+        const neighbors = generateNeighbors(currentSolution);
+        
+        // Update tabu list with time-based tenure
+        const newTabuList = tabuList
+          .map(item => ({ ...item, tenure: item.tenure - 1 }))
+          .filter(item => item.tenure > 0);
+        
+        // Add current solution to tabu list with full tenure
+        newTabuList.push({
+          x: currentSolution.x,
+          y: currentSolution.y,
+          tenure: tabuTenure
+        });
+        
+        // Calculate current convex hull with new tabu list
+        const hull = computeConvexHull([...newTabuList.map(t => ({ x: t.x, y: t.y }))]);
+        
+        // Filter neighbors that are not in the tabu region (convex hull)
+        let validNeighbors = neighbors.filter(neighbor => 
+          !isInsideConvexHull(neighbor, hull)
+        );
+        
+        // Double-check that the selected neighbor isn't in the convex hull
+        let attempts = 0;
+        const maxAttempts = 3;
+        
+        // If we don't have valid neighbors, try generating more with a larger radius
+        while (validNeighbors.length === 0 && attempts < maxAttempts) {
+          const expandedRadius = neighborhoodRadius * (1 + attempts);
+          const extraNeighbors = [];
+          
+          // Generate more neighbors with expanded radius
+          for (let i = 0; i < neighborhoodSize; i++) {
+            const theta = Math.random() * 2 * Math.PI;
+            const r = expandedRadius * (0.8 + 0.4 * Math.random()); // Between 0.8*radius and 1.2*radius
+            
+            const newX = Math.max(domain[0], Math.min(domain[1], currentSolution.x + r * Math.cos(theta)));
+            const newY = Math.max(domain[0], Math.min(domain[1], currentSolution.y + r * Math.sin(theta)));
+            
+            extraNeighbors.push({
+              x: newX,
+              y: newY,
+              value: functions[functionType](newX, newY)
+            });
+          }
+          
+          validNeighbors = extraNeighbors.filter(neighbor => 
+            !isInsideConvexHull(neighbor, hull)
+          );
+          
+          attempts++;
+        }
+        
+        let nextSolution;
+        
+        if (validNeighbors.length === 0) {
+          // If still no valid neighbors after multiple attempts, jump to a random location far from current region
+          
+          // Try to find a point that's not in the convex hull
+          let randomX, randomY, randomSolution;
+          let found = false;
+          
+          for (let i = 0; i < 10; i++) { // Try 10 times to find a valid random point
+            randomX = Math.random() * (domain[1] - domain[0]) + domain[0];
+            randomY = Math.random() * (domain[1] - domain[0]) + domain[0];
+            randomSolution = {
+              x: randomX,
+              y: randomY,
+              value: functions[functionType](randomX, randomY)
+            };
+            
+            if (!isInsideConvexHull(randomSolution, hull)) {
+              found = true;
+              break;
+            }
+          }
+          
+          if (found) {
+            nextSolution = randomSolution;
+          } else {
+            // If we still can't find a point outside the hull, clear part of the tabu list
+            // This is a last resort to prevent getting stuck
+            newTabuList.splice(0, Math.floor(newTabuList.length / 2));
+            
+            randomX = Math.random() * (domain[1] - domain[0]) + domain[0];
+            randomY = Math.random() * (domain[1] - domain[0]) + domain[0];
+            nextSolution = {
+              x: randomX,
+              y: randomY,
+              value: functions[functionType](randomX, randomY)
+            };
+          }
+        } else if (randomWalk) {
+          // Select a random non-tabu neighbor
+          nextSolution = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
+        } else {
+          // Select the best non-tabu neighbor
+          nextSolution = _.minBy(validNeighbors, 'value');
+          
+          // Double-check that the selected solution is truly outside the hull
+          if (isInsideConvexHull(nextSolution, hull)) {
+            // If somehow the best neighbor is inside the hull, choose a random valid one
+            nextSolution = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
+          }
+        }
+        
+        // Verify one more time that the next solution is outside the hull
+        
+        // Update best solution if needed
+        const newBestSolution = 
+          nextSolution.value < bestSolution.value ? nextSolution : bestSolution;
+        
+        // Update state with new convex hull
+        setCurrentSolution(nextSolution);
+        setBestSolution(newBestSolution);
+        setTabuList(newTabuList);
+        setConvexHull(hull); // Update hull before drawing
+        setAllVisited([...allVisited, nextSolution]);
+        setCurrentIteration(currentIteration + 1);
+        
+        // Draw the updated state with the new convex hull
+        drawCanvas(nextSolution, newBestSolution, newTabuList, hull, [...allVisited, nextSolution]);
+      };
+      
+      // Main search loop
+      useEffect(() => {
+        if (isRunning && currentIteration < maxIterations) {
+          animationRef.current = setTimeout(() => {
+            tabuSearchIteration();
+          }, speed);
+        }
+        
+        return () => {
+          if (animationRef.current) {
+            clearTimeout(animationRef.current);
+          }
+        };
+      }, [isRunning, currentIteration, currentSolution, tabuList, allVisited]);
+      
+      // Update visualization when parameters change
+      useEffect(() => {
+        if (currentSolution && bestSolution) {
+          drawCanvas(currentSolution, bestSolution, tabuList, convexHull, allVisited);
+        }
+      }, [functionType, currentSolution, bestSolution, tabuList, convexHull, allVisited]);
+      
+      // Drawing functions
+      const drawCanvas = (current, best, tabuPoints, hull, visited) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, width, height);
+        
+        // Draw the function surface
+        drawFunctionSurface(ctx);
+        
+        // Draw the convex hull
+        if (hull && hull.length > 2) {
+          drawConvexHull(ctx, hull);
+        }
+        
+        // Draw all visited points
+        if (visited) {
+          visited.forEach(point => {
+            drawPoint(ctx, point.x, point.y, 'rgba(200, 200, 200, 0.5)', 3);
+          });
+        }
+        
+        // Draw neighborhood circle around current solution
+        if (current) {
+          const canvasX = margin + ((current.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+          const canvasY = height - margin - ((current.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+          const radiusInPixels = (neighborhoodRadius / (domain[1] - domain[0])) * plotWidth;
+          
+          ctx.strokeStyle = 'rgba(0, 120, 255, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]); // Dashed line
+          ctx.beginPath();
+          ctx.arc(canvasX, canvasY, radiusInPixels, 0, 2 * Math.PI);
+          ctx.stroke();
+          ctx.setLineDash([]); // Reset dash
+        }
+        
+        // Draw tabu points
+        if (tabuPoints) {
+          tabuPoints.forEach(point => {
+            drawPoint(ctx, point.x, point.y, 'rgba(255, 0, 0, 0.7)', 4);
+          });
+        }
+        
+        // Draw current solution
+        if (current) {
+          drawPoint(ctx, current.x, current.y, 'blue', 6);
+        }
+        
+        // Draw best solution
+        if (best) {
+          drawPoint(ctx, best.x, best.y, 'green', 6);
+        }
+      };
+      
+      const drawFunctionSurface = (ctx) => {
+        const resolution = 100;
+        const dx = (domain[1] - domain[0]) / resolution;
+        const dy = (domain[1] - domain[0]) / resolution;
+        
+        const values = [];
+        
+        // Collect function values
+        for (let i = 0; i <= resolution; i++) {
+          for (let j = 0; j <= resolution; j++) {
+            const x = domain[0] + i * dx;
+            const y = domain[0] + j * dy;
+            values.push(functions[functionType](x, y));
+          }
+        }
+        
+        // Find min and max for color scaling
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        
+        // Draw the surface
+        for (let i = 0; i <= resolution; i++) {
+          for (let j = 0; j <= resolution; j++) {
+            const x = domain[0] + i * dx;
+            const y = domain[0] + j * dy;
+            const value = functions[functionType](x, y);
+            
+            // Normalize value between 0 and 1
+            const normalizedValue = (value - minVal) / (maxVal - minVal);
+            
+            // Map to color (darker means lower value - better for minimization)
+            const intensity = Math.floor(255 * (1 - normalizedValue));
+            const color = `rgb(${intensity}, ${intensity}, ${intensity})`;
+            
+            // Convert coordinates to canvas pixels
+            const canvasX = margin + ((x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+            const canvasY = height - margin - ((y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+            
+            ctx.fillStyle = color;
+            ctx.fillRect(canvasX, canvasY, plotWidth/resolution, plotHeight/resolution);
+          }
+        }
+        
+        // Draw axes
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.lineWidth = 1;
+        
+        // X-axis
+        ctx.beginPath();
+        ctx.moveTo(margin, height - margin);
+        ctx.lineTo(width - margin, height - margin);
+        ctx.stroke();
+        
+        // Y-axis
+        ctx.beginPath();
+        ctx.moveTo(margin, margin);
+        ctx.lineTo(margin, height - margin);
+        ctx.stroke();
+        
+        // Axis labels
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        
+        // X-axis labels
+        for (let i = 0; i <= 4; i++) {
+          const x = domain[0] + i * (domain[1] - domain[0]) / 4;
+          const canvasX = margin + (i * plotWidth / 4);
+          ctx.fillText(x.toFixed(1), canvasX, height - margin + 15);
+        }
+        
+        // Y-axis labels
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 4; i++) {
+          const y = domain[0] + i * (domain[1] - domain[0]) / 4;
+          const canvasY = height - margin - (i * plotHeight / 4);
+          ctx.fillText(y.toFixed(1), margin - 5, canvasY + 3);
+        }
+      };
+      
+      const drawPoint = (ctx, x, y, color, size) => {
+        const canvasX = margin + ((x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+        const canvasY = height - margin - ((y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+        
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, size, 0, 2 * Math.PI);
+        ctx.fill();
+      };
+      
+      const drawConvexHull = (ctx, hull) => {
+        if (hull.length < 3) return;
+        
+        // Fill the convex hull with semi-transparent gray
+        ctx.fillStyle = 'rgba(200, 200, 200, 0.4)';
+        ctx.beginPath();
+        
+        const firstPoint = hull[0];
+        const firstCanvasX = margin + ((firstPoint.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+        const firstCanvasY = height - margin - ((firstPoint.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+        
+        ctx.moveTo(firstCanvasX, firstCanvasY);
+        
+        for (let i = 1; i < hull.length; i++) {
+          const point = hull[i];
+          const canvasX = margin + ((point.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+          const canvasY = height - margin - ((point.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+          
+          ctx.lineTo(canvasX, canvasY);
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+        
+        // Draw the hull outline
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      };
+      
+      // Start/stop the search
+      const toggleSearch = () => {
+        setIsRunning(!isRunning);
+      };
+      
+      return (
+        <div className="flex flex-col items-center p-4 w-full">
+          <h2 className="text-2xl font-bold mb-4">Tabu Search with Convex Hull Visualization</h2>
+          
+          <div className="flex flex-col md:flex-row gap-4 w-full">
+            <div className="border rounded p-4">
+              <canvas 
+                ref={canvasRef} 
+                width={width} 
+                height={height} 
+                className="border"
+              />
+              
+              <div className="mt-2 text-sm">
+                <div><span className="inline-block w-4 h-4 bg-blue-500 mr-2"></span> Current solution</div>
+                <div><span className="inline-block w-4 h-4 bg-green-500 mr-2"></span> Best solution</div>
+                <div><span className="inline-block w-4 h-4 bg-red-500 mr-2"></span> Tabu points</div>
+                <div><span className="inline-block w-4 h-4 bg-gray-300 mr-2"></span> Tabu region (convex hull)</div>
+                <div><span className="inline-block border-2 border-blue-400 border-dashed rounded-full w-4 h-4 mr-2"></span> Neighborhood radius</div>
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-4 p-4 border rounded">
+              <div>
+                <h3 className="font-bold">Function</h3>
+                <select 
+                  value={functionType}
+                  onChange={(e) => setFunctionType(e.target.value)}
+                  className="w-full p-2 border rounded"
+                >
+                  <option value="rastrigin">Rastrigin</option>
+                  <option value="ackley">Ackley</option>
+                  <option value="rosenbrock">Rosenbrock</option>
+                  <option value="himmelblau">Himmelblau</option>
+                </select>
+              </div>
+              
+              <div>
+                <h3 className="font-bold">Tabu Search Settings</h3>
+                
+                <div className="mb-2">
+                  <label className="block">Max Iterations</label>
+                  <input 
+                    type="range" 
+                    min="10" 
+                    max="100" 
+                    value={maxIterations} 
+                    onChange={(e) => setMaxIterations(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{maxIterations}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Speed (ms)</label>
+                  <input 
+                    type="range" 
+                    min="100" 
+                    max="1000" 
+                    step="100" 
+                    value={speed} 
+                    onChange={(e) => setSpeed(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{speed}ms</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Neighborhood Size</label>
+                  <input 
+                    type="range" 
+                    min="5" 
+                    max="50" 
+                    value={neighborhoodSize} 
+                    onChange={(e) => setNeighborhoodSize(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{neighborhoodSize}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Neighborhood Radius</label>
+                  <input 
+                    type="range" 
+                    min="0.1" 
+                    max="2" 
+                    step="0.1" 
+                    value={neighborhoodRadius} 
+                    onChange={(e) => setNeighborhoodRadius(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{neighborhoodRadius.toFixed(1)}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Tabu Tenure</label>
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="20" 
+                    value={tabuTenure} 
+                    onChange={(e) => setTabuTenure(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{tabuTenure}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="flex items-center">
+                    <input 
+                      type="checkbox" 
+                      checked={randomWalk} 
+                      onChange={(e) => setRandomWalk(e.target.checked)}
+                      className="mr-2"
+                    />
+                    Random Walk (instead of best available)
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <button 
+                  onClick={toggleSearch}
+                  className={`px-4 py-2 rounded ${isRunning ? 'bg-red-500' : 'bg-green-500'} text-white`}
+                >
+                  {isRunning ? 'Stop' : 'Start'}
+                </button>
+                
+                <button 
+                  onClick={resetSearch}
+                  className="px-4 py-2 rounded bg-gray-500 text-white"
+                >
+                  Reset
+                </button>
+              </div>
+              
+              <div>
+                <h3 className="font-bold">Status</h3>
+                <div>Iteration: {currentIteration} / {maxIterations}</div>
+                <div>Current value: {currentSolution?.value.toFixed(4)}</div>
+                <div>Best value: {bestSolution?.value.toFixed(4)}</div>
+                <div>Best location: ({bestSolution?.x.toFixed(2)}, {bestSolution?.y.toFixed(2)})</div>
+                <div>Tabu list size: {tabuList.length}</div>
+                <div>Convex hull vertices: {convexHull.length}</div>
+                <div className="mt-2 text-sm italic">
+                  Note: The blue dot (current solution) is guaranteed to be outside the gray convex hull area
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    
+    // Mount the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<TabuSearchVisualization />);
+  </script>
+</body>
+</html>

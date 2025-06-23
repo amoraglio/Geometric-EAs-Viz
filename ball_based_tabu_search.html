@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ball-Based Tabu Search Visualization</title>
+  <!-- Load React -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <!-- Load Babel for JSX -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
+  <!-- Load Lodash -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    .flex {
+      display: flex;
+    }
+    .flex-col {
+      flex-direction: column;
+    }
+    .flex-row {
+      flex-direction: row;
+    }
+    .items-center {
+      align-items: center;
+    }
+    .p-4 {
+      padding: 16px;
+    }
+    .w-full {
+      width: 100%;
+    }
+    .text-2xl {
+      font-size: 1.5rem;
+    }
+    .font-bold {
+      font-weight: bold;
+    }
+    .mb-4 {
+      margin-bottom: 16px;
+    }
+    .gap-4 {
+      gap: 16px;
+    }
+    .border {
+      border: 1px solid #ccc;
+    }
+    .rounded {
+      border-radius: 4px;
+    }
+    .mt-2 {
+      margin-top: 8px;
+    }
+    .text-sm {
+      font-size: 0.875rem;
+    }
+    .inline-block {
+      display: inline-block;
+    }
+    .w-4 {
+      width: 16px;
+    }
+    .h-4 {
+      height: 16px;
+    }
+    .bg-blue-500 {
+      background-color: blue;
+    }
+    .bg-green-500 {
+      background-color: green;
+    }
+    .bg-red-500 {
+      background-color: red;
+    }
+    .bg-gray-300 {
+      background-color: #ccc;
+    }
+    .bg-gray-500 {
+      background-color: #666;
+    }
+    .bg-orange-500 {
+      background-color: orange;
+    }
+    .mr-2 {
+      margin-right: 8px;
+    }
+    .border-2 {
+      border-width: 2px;
+    }
+    .border-blue-400 {
+      border-color: rgba(0, 120, 255, 0.6);
+    }
+    .border-red-400 {
+      border-color: rgba(255, 0, 0, 0.6);
+    }
+    .border-dashed {
+      border-style: dashed;
+    }
+    .rounded-full {
+      border-radius: 9999px;
+    }
+    .block {
+      display: block;
+    }
+    .mb-2 {
+      margin-bottom: 8px;
+    }
+    .text-right {
+      text-align: right;
+    }
+    .px-4 {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .py-2 {
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
+    .text-white {
+      color: white;
+    }
+    .italic {
+      font-style: italic;
+    }
+    
+    @media (max-width: 768px) {
+      .md\:flex-row {
+        flex-direction: column;
+      }
+    }
+    
+    /* Custom styles */
+    canvas {
+      background-color: white;
+    }
+    select, input[type="range"] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+    }
+    #root {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    
+    const BallBasedTabuSearch = () => {
+      // Canvas dimensions
+      const width = 600;
+      const height = 500;
+      const margin = 50;
+      const plotWidth = width - 2 * margin;
+      const plotHeight = height - 2 * margin;
+      
+      // Function settings
+      const [functionType, setFunctionType] = useState('rastrigin');
+      const domain = [-5, 5]; // x and y limits
+      
+      // Tabu search settings
+      const [isRunning, setIsRunning] = useState(false);
+      const [speed, setSpeed] = useState(500); // ms per iteration
+      const [maxIterations, setMaxIterations] = useState(50);
+      const [currentIteration, setCurrentIteration] = useState(0);
+      const [neighborhoodSize, setNeighborhoodSize] = useState(20);
+      const [neighborhoodRadius, setNeighborhoodRadius] = useState(0.5);
+      const [tabuTenure, setTabuTenure] = useState(10);
+      const [randomWalk, setRandomWalk] = useState(false);
+      
+      // Ball-based tabu search state
+      const [currentSolution, setCurrentSolution] = useState(null);
+      const [bestSolution, setBestSolution] = useState(null);
+      const [oldestSolution, setOldestSolution] = useState(null);
+      const [allVisited, setAllVisited] = useState([]);
+      const [segmentHistory, setSegmentHistory] = useState([]); // Track segment evolution
+      
+      const animationRef = useRef(null);
+      const canvasRef = useRef(null);
+      
+      // Multimodal functions
+      const functions = {
+        rastrigin: (x, y) => {
+          const A = 10;
+          return A * 2 + (x*x - A * Math.cos(2 * Math.PI * x)) + (y*y - A * Math.cos(2 * Math.PI * y));
+        },
+        ackley: (x, y) => {
+          const a = 20, b = 0.2, c = 2 * Math.PI;
+          const term1 = -a * Math.exp(-b * Math.sqrt(0.5 * (x*x + y*y)));
+          const term2 = -Math.exp(0.5 * (Math.cos(c*x) + Math.cos(c*y)));
+          return term1 + term2 + a + Math.E;
+        },
+        rosenbrock: (x, y) => {
+          return 100 * Math.pow(y - x*x, 2) + Math.pow(1 - x, 2);
+        },
+        himmelblau: (x, y) => {
+          return Math.pow(x*x + y - 11, 2) + Math.pow(x + y*y - 7, 2);
+        }
+      };
+      
+      // Calculate Euclidean distance
+      const distance = (p1, p2) => {
+        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+      };
+      
+      // Initialize the search
+      useEffect(() => {
+        resetSearch();
+      }, [functionType]);
+      
+      const resetSearch = () => {
+        const x0 = Math.random() * (domain[1] - domain[0]) + domain[0];
+        const y0 = Math.random() * (domain[1] - domain[0]) + domain[0];
+        const initialSolution = { 
+          x: x0, 
+          y: y0, 
+          value: functions[functionType](x0, y0),
+          iteration: 0
+        };
+        
+        setCurrentIteration(0);
+        setCurrentSolution(initialSolution);
+        setBestSolution(initialSolution);
+        setOldestSolution(initialSolution); // Initially, oldest = current
+        setAllVisited([initialSolution]);
+        setSegmentHistory([{ start: initialSolution, end: initialSolution, iteration: 0 }]);
+        setIsRunning(false);
+        
+        if (animationRef.current) {
+          clearTimeout(animationRef.current);
+        }
+        
+        drawCanvas(initialSolution, initialSolution, initialSolution, []);
+      };
+      
+      // Check if a point is inside the tabu ball
+      const isInsideTabuBall = (point, center, radius) => {
+        return distance(point, center) <= radius;
+      };
+      
+      // Generate neighbors uniformly within blue circle, discard if in red circle
+      const generateValidNeighbors = (current, oldest) => {
+        const neighbors = [];
+        const tabuRadius = distance(oldest, current);
+        
+        for (let i = 0; i < neighborhoodSize * 3; i++) { // Generate extra to account for discards
+          // Uniform sampling within circle (blue circle)
+          const theta = Math.random() * 2 * Math.PI;
+          const r = Math.sqrt(Math.random()) * neighborhoodRadius; // sqrt for uniform distribution
+          
+          const newX = Math.max(domain[0], Math.min(domain[1], current.x + r * Math.cos(theta)));
+          const newY = Math.max(domain[0], Math.min(domain[1], current.y + r * Math.sin(theta)));
+          
+          const neighbor = {
+            x: newX,
+            y: newY,
+            value: functions[functionType](newX, newY),
+            iteration: currentIteration + 1
+          };
+          
+          // Discard if in red circle (tabu ball)
+          if (!isInsideTabuBall(neighbor, oldest, tabuRadius)) {
+            neighbors.push(neighbor);
+          }
+        }
+        
+        return neighbors;
+      };
+      
+      // Perform one iteration of ball-based tabu search
+      const ballBasedTabuIteration = () => {
+        if (currentIteration >= maxIterations) {
+          setIsRunning(false);
+          return;
+        }
+        
+        // FIRST: Determine what the oldest solution will be (accounting for tenure expiration)
+        let activeOldestSolution = oldestSolution;
+        if (allVisited.length >= tabuTenure) {
+          const oldestIndex = Math.max(0, allVisited.length - tabuTenure);
+          activeOldestSolution = allVisited[oldestIndex];
+        }
+        
+        // Generate neighbors uniformly within blue circle, discard if in red circle
+        let validNeighbors = generateValidNeighbors(currentSolution, activeOldestSolution);
+        
+        // If no valid neighbors, try expanding the blue circle radius
+        let attempts = 0;
+        const maxAttempts = 3;
+        
+        while (validNeighbors.length === 0 && attempts < maxAttempts) {
+          const expandedRadius = neighborhoodRadius * (2 + attempts);
+          const extraNeighbors = [];
+          const tabuRadius = distance(activeOldestSolution, currentSolution);
+          
+          for (let i = 0; i < neighborhoodSize * 4; i++) {
+            // Uniform sampling within expanded circle
+            const theta = Math.random() * 2 * Math.PI;
+            const r = Math.sqrt(Math.random()) * expandedRadius;
+            
+            const newX = Math.max(domain[0], Math.min(domain[1], currentSolution.x + r * Math.cos(theta)));
+            const newY = Math.max(domain[0], Math.min(domain[1], currentSolution.y + r * Math.sin(theta)));
+            
+            const neighbor = {
+              x: newX,
+              y: newY,
+              value: functions[functionType](newX, newY),
+              iteration: currentIteration + 1
+            };
+            
+            // Discard if in tabu ball (red circle)
+            if (!isInsideTabuBall(neighbor, activeOldestSolution, tabuRadius)) {
+              extraNeighbors.push(neighbor);
+            }
+          }
+          
+          validNeighbors = extraNeighbors;
+          attempts++;
+        }
+        
+        let nextSolution;
+        let finalOldestSolution = activeOldestSolution;
+        
+        if (validNeighbors.length === 0) {
+          // Need to escape - reset tabu mechanism
+          nextSolution = {
+            x: Math.random() * (domain[1] - domain[0]) + domain[0],
+            y: Math.random() * (domain[1] - domain[0]) + domain[0],
+            value: 0,
+            iteration: currentIteration + 1
+          };
+          nextSolution.value = functions[functionType](nextSolution.x, nextSolution.y);
+          // Reset: make the new solution the oldest (tabu ball will be radius 0)
+          finalOldestSolution = nextSolution;
+          
+        } else if (randomWalk) {
+          nextSolution = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
+        } else {
+          nextSolution = _.minBy(validNeighbors, 'value');
+        }
+        
+        // Update best solution
+        const newBestSolution = 
+          nextSolution.value < bestSolution.value ? nextSolution : bestSolution;
+        
+        // Update segment history
+        const newSegment = {
+          start: finalOldestSolution,
+          end: nextSolution,
+          iteration: currentIteration + 1
+        };
+        
+        // Update all state - radius will be exactly distance(finalOldestSolution, nextSolution)
+        setCurrentSolution(nextSolution);
+        setBestSolution(newBestSolution);
+        setOldestSolution(finalOldestSolution);
+        setAllVisited([...allVisited, nextSolution]);
+        setSegmentHistory([...segmentHistory, newSegment]);
+        setCurrentIteration(currentIteration + 1);
+        
+        // Draw - radius will be calculated as distance(finalOldestSolution, nextSolution)
+        drawCanvas(nextSolution, newBestSolution, finalOldestSolution, [...allVisited, nextSolution]);
+      };
+      
+      // Main search loop
+      useEffect(() => {
+        if (isRunning && currentIteration < maxIterations) {
+          animationRef.current = setTimeout(() => {
+            ballBasedTabuIteration();
+          }, speed);
+        }
+        
+        return () => {
+          if (animationRef.current) {
+            clearTimeout(animationRef.current);
+          }
+        };
+      }, [isRunning, currentIteration, currentSolution, oldestSolution]);
+      
+      // Update visualization when parameters change
+      useEffect(() => {
+        if (currentSolution && bestSolution && oldestSolution) {
+          drawCanvas(currentSolution, bestSolution, oldestSolution, allVisited);
+        }
+      }, [functionType, currentSolution, bestSolution, oldestSolution, allVisited]);
+      
+      // Drawing functions
+      const drawCanvas = (current, best, oldest, visited) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, width, height);
+        
+        // Calculate the radius dynamically from the actual displayed points
+        const actualRadius = (oldest && current) ? distance(oldest, current) : 0;
+        
+        // Draw the function surface
+        drawFunctionSurface(ctx);
+        
+        // Draw the tabu ball (using dynamically calculated radius)
+        if (actualRadius > 0.01 && oldest) {
+          drawTabuBall(ctx, oldest, actualRadius);
+        }
+        
+        // Draw segment connecting oldest to current (if they're different points)
+        if (oldest && current && actualRadius > 0.01) {
+          drawSegment(ctx, oldest, current);
+        }
+        
+        // Draw all visited points
+        if (visited) {
+          visited.slice(0, -1).forEach(point => {
+            drawPoint(ctx, point.x, point.y, 'rgba(200, 200, 200, 0.5)', 3);
+          });
+        }
+        
+        // Draw neighborhood circle around current solution
+        if (current) {
+          const canvasX = margin + ((current.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+          const canvasY = height - margin - ((current.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+          const radiusInPixels = (neighborhoodRadius / (domain[1] - domain[0])) * plotWidth;
+          
+          ctx.strokeStyle = 'rgba(0, 120, 255, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.arc(canvasX, canvasY, radiusInPixels, 0, 2 * Math.PI);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        
+        // Draw oldest solution (center of tabu ball)
+        if (oldest) {
+          drawPoint(ctx, oldest.x, oldest.y, 'orange', 6);
+        }
+        
+        // Draw current solution
+        if (current) {
+          drawPoint(ctx, current.x, current.y, 'blue', 6);
+        }
+        
+        // Draw best solution
+        if (best) {
+          drawPoint(ctx, best.x, best.y, 'green', 6);
+        }
+      };
+      
+      const drawFunctionSurface = (ctx) => {
+        const resolution = 100;
+        const dx = (domain[1] - domain[0]) / resolution;
+        const dy = (domain[1] - domain[0]) / resolution;
+        
+        const values = [];
+        
+        // Collect function values
+        for (let i = 0; i <= resolution; i++) {
+          for (let j = 0; j <= resolution; j++) {
+            const x = domain[0] + i * dx;
+            const y = domain[0] + j * dy;
+            values.push(functions[functionType](x, y));
+          }
+        }
+        
+        // Find min and max for color scaling
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        
+        // Draw the surface
+        for (let i = 0; i <= resolution; i++) {
+          for (let j = 0; j <= resolution; j++) {
+            const x = domain[0] + i * dx;
+            const y = domain[0] + j * dy;
+            const value = functions[functionType](x, y);
+            
+            // Normalize value between 0 and 1
+            const normalizedValue = (value - minVal) / (maxVal - minVal);
+            
+            // Map to color (darker means lower value - better for minimization)
+            const intensity = Math.floor(255 * (1 - normalizedValue));
+            const color = `rgb(${intensity}, ${intensity}, ${intensity})`;
+            
+            // Convert coordinates to canvas pixels
+            const canvasX = margin + ((x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+            const canvasY = height - margin - ((y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+            
+            ctx.fillStyle = color;
+            ctx.fillRect(canvasX, canvasY, plotWidth/resolution, plotHeight/resolution);
+          }
+        }
+        
+        // Draw axes
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.lineWidth = 1;
+        
+        // X-axis
+        ctx.beginPath();
+        ctx.moveTo(margin, height - margin);
+        ctx.lineTo(width - margin, height - margin);
+        ctx.stroke();
+        
+        // Y-axis
+        ctx.beginPath();
+        ctx.moveTo(margin, margin);
+        ctx.lineTo(margin, height - margin);
+        ctx.stroke();
+        
+        // Axis labels
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        
+        // X-axis labels
+        for (let i = 0; i <= 4; i++) {
+          const x = domain[0] + i * (domain[1] - domain[0]) / 4;
+          const canvasX = margin + (i * plotWidth / 4);
+          ctx.fillText(x.toFixed(1), canvasX, height - margin + 15);
+        }
+        
+        // Y-axis labels
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 4; i++) {
+          const y = domain[0] + i * (domain[1] - domain[0]) / 4;
+          const canvasY = height - margin - (i * plotHeight / 4);
+          ctx.fillText(y.toFixed(1), margin - 5, canvasY + 3);
+        }
+      };
+      
+      const drawPoint = (ctx, x, y, color, size) => {
+        const canvasX = margin + ((x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+        const canvasY = height - margin - ((y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+        
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, size, 0, 2 * Math.PI);
+        ctx.fill();
+      };
+      
+      const drawTabuBall = (ctx, center, radius) => {
+        const canvasX = margin + ((center.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+        const canvasY = height - margin - ((center.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+        const radiusInPixels = (radius / (domain[1] - domain[0])) * plotWidth;
+        
+        // Fill the tabu ball with semi-transparent red
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, radiusInPixels, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Draw the ball outline
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, radiusInPixels, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+      
+      const drawSegment = (ctx, start, end) => {
+        const startX = margin + ((start.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+        const startY = height - margin - ((start.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+        const endX = margin + ((end.x - domain[0]) / (domain[1] - domain[0])) * plotWidth;
+        const endY = height - margin - ((end.y - domain[0]) / (domain[1] - domain[0])) * plotHeight;
+        
+        ctx.strokeStyle = 'rgba(128, 0, 128, 0.8)'; // Purple
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+      };
+      
+      // Start/stop the search
+      const toggleSearch = () => {
+        setIsRunning(!isRunning);
+      };
+      
+      return (
+        <div className="flex flex-col items-center p-4 w-full">
+          <h2 className="text-2xl font-bold mb-4">Ball-Based Tabu Search Visualization</h2>
+          
+          <div className="flex flex-col md:flex-row gap-4 w-full">
+            <div className="border rounded p-4">
+              <canvas 
+                ref={canvasRef} 
+                width={width} 
+                height={height} 
+                className="border"
+              />
+              
+              <div className="mt-2 text-sm">
+                <div><span className="inline-block w-4 h-4 bg-blue-500 mr-2"></span> Current solution</div>
+                <div><span className="inline-block w-4 h-4 bg-green-500 mr-2"></span> Best solution</div>
+                <div><span className="inline-block w-4 h-4 bg-orange-500 mr-2"></span> Oldest solution (tabu center)</div>
+                <div><span className="inline-block border-2 border-red-400 border-dashed rounded-full w-4 h-4 mr-2"></span> Tabu ball (forbidden region)</div>
+                <div><span className="inline-block border-2 border-blue-400 border-dashed rounded-full w-4 h-4 mr-2"></span> Neighborhood radius</div>
+                <div style={{color: 'purple'}}>━━━ Segment (oldest → current)</div>
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-4 p-4 border rounded">
+              <div>
+                <h3 className="font-bold">Function</h3>
+                <select 
+                  value={functionType}
+                  onChange={(e) => setFunctionType(e.target.value)}
+                  className="w-full p-2 border rounded"
+                >
+                  <option value="rastrigin">Rastrigin</option>
+                  <option value="ackley">Ackley</option>
+                  <option value="rosenbrock">Rosenbrock</option>
+                  <option value="himmelblau">Himmelblau</option>
+                </select>
+              </div>
+              
+              <div>
+                <h3 className="font-bold">Ball-Based Tabu Search Settings</h3>
+                
+                <div className="mb-2">
+                  <label className="block">Max Iterations</label>
+                  <input 
+                    type="range" 
+                    min="10" 
+                    max="100" 
+                    value={maxIterations} 
+                    onChange={(e) => setMaxIterations(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{maxIterations}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Speed (ms)</label>
+                  <input 
+                    type="range" 
+                    min="100" 
+                    max="1000" 
+                    step="100" 
+                    value={speed} 
+                    onChange={(e) => setSpeed(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{speed}ms</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Neighborhood Size</label>
+                  <input 
+                    type="range" 
+                    min="5" 
+                    max="50" 
+                    value={neighborhoodSize} 
+                    onChange={(e) => setNeighborhoodSize(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{neighborhoodSize}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Neighborhood Radius</label>
+                  <input 
+                    type="range" 
+                    min="0.1" 
+                    max="2" 
+                    step="0.1" 
+                    value={neighborhoodRadius} 
+                    onChange={(e) => setNeighborhoodRadius(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{neighborhoodRadius.toFixed(1)}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="block">Tabu Tenure</label>
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="20" 
+                    value={tabuTenure} 
+                    onChange={(e) => setTabuTenure(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-right">{tabuTenure}</div>
+                </div>
+                
+                <div className="mb-2">
+                  <label className="flex items-center">
+                    <input 
+                      type="checkbox" 
+                      checked={randomWalk} 
+                      onChange={(e) => setRandomWalk(e.target.checked)}
+                      className="mr-2"
+                    />
+                    Random Walk (instead of best available)
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <button 
+                  onClick={toggleSearch}
+                  className={`px-4 py-2 rounded ${isRunning ? 'bg-red-500' : 'bg-green-500'} text-white`}
+                >
+                  {isRunning ? 'Stop' : 'Start'}
+                </button>
+                
+                <button 
+                  onClick={resetSearch}
+                  className="px-4 py-2 rounded bg-gray-500 text-white"
+                >
+                  Reset
+                </button>
+              </div>
+              
+              <div>
+                <h3 className="font-bold">Status</h3>
+                <div>Iteration: {currentIteration} / {maxIterations}</div>
+                <div>Current value: {currentSolution?.value.toFixed(4)}</div>
+                <div>Best value: {bestSolution?.value.toFixed(4)}</div>
+                <div>Best location: ({bestSolution?.x.toFixed(2)}, {bestSolution?.y.toFixed(2)})</div>
+                <div>Tabu ball radius: {(currentSolution && oldestSolution ? distance(oldestSolution, currentSolution) : 0).toFixed(3)}</div>
+                <div>Segment length: {(currentSolution && oldestSolution ? distance(oldestSolution, currentSolution) : 0).toFixed(3)}</div>
+                <div className="mt-2 text-sm italic">
+                  Ball-based approach: Samples uniformly within the blue circle (neighborhood), then discards any candidates that fall within the red circle (tabu ball). The blue dot may not always be exactly on the red circle edge with this approach.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    
+    // Mount the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BallBasedTabuSearch />);
+  </script>
+</body>
+</html>
